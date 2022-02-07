@@ -10,24 +10,39 @@ import sys
 MAX_COMMANDS_PER_FLUSH = 64
 
 _HEX_VALUE = r"0x[0-9a-fA-F]+"
-_PGRAPH_METHOD_RE = re.compile(r"nv2a: pgraph method \((\d+)\):\s+(" +  _HEX_VALUE + r") -> (" + _HEX_VALUE + r")\s+(?:\S+\s+)?\((" + _HEX_VALUE + r")\)")
-_UNHANDLED_METHOD_RE = re.compile(r"nv2a:\s+unhandled\s+\((" + _HEX_VALUE + r")\s+(" + _HEX_VALUE + r")\)")
+# fmt: off
+_PGRAPH_METHOD_RE = re.compile(
+    r"nv2a: pgraph method \((\d+)\):\s+(" + _HEX_VALUE + r") -> (" + _HEX_VALUE + r")\s+(?:(\S+)\s+)?\((" + _HEX_VALUE + r")\)"
+)
+_UNHANDLED_METHOD_RE = re.compile(
+    r"nv2a:\s+unhandled\s+\((" + _HEX_VALUE + r")\s+(" + _HEX_VALUE + r")\)"
+)
+# fmt: on
 
-def _convert_pgraph_method(_channel, nv_class, nv_op, nv_param):
+
+def _convert_pgraph_method(_channel, nv_class, nv_op, nv_op_name, nv_param):
     if nv_class == 0x97:
-        print("  p = pb_push1(p, 0x%X, 0x%X);" % (nv_op, nv_param))
+        print("  p = pb_push1(p, 0x%X /*%s*/, 0x%X);" % (nv_op, nv_op_name, nv_param))
         return
 
-    print("  // p = pb_pushX_to_0x%X(p, 0x%X, 0x%X);" % (nv_class, nv_op, nv_param))
+    print(
+        "  // p = pb_pushX_to_0x%X(p, 0x%X /*%s*/, 0x%X);"
+        % (nv_class, nv_op, nv_op_name, nv_param)
+    )
 
 
 def _convert_unhandled_method(nv_class, nv_op):
     if nv_class == 0x97:
-        print("  // p = pb_pushX(p, 0x%X, /* TODO: extend unhandled method log to include param */);" % nv_op)
+        print(
+            "  // p = pb_pushX(p, 0x%X, /* TODO: extend unhandled method log to include param */);"
+            % nv_op
+        )
         return
 
-    print("  // p = pb_pushX_to_0x%X(p, 0x%X, /* TODO: extend unhandled method log to include param */);" % (nv_class,
-                                                                                                             nv_op))
+    print(
+        "  // p = pb_pushX_to_0x%X(p, 0x%X, /* TODO: extend unhandled method log to include param */);"
+        % (nv_class, nv_op)
+    )
 
 
 def _process_file(filename, start_line, max_lines):
@@ -60,7 +75,9 @@ def _process_file(filename, start_line, max_lines):
                     int(match.group(1), 0),
                     int(match.group(2), 16),
                     int(match.group(3), 16),
-                    int(match.group(4), 16))
+                    match.group(4),
+                    int(match.group(5), 16),
+                )
 
                 processed_lines += 1
                 processed_since_last_flush += 1
@@ -68,7 +85,9 @@ def _process_file(filename, start_line, max_lines):
 
             match = _UNHANDLED_METHOD_RE.match(line)
             if match:
-                _convert_unhandled_method(int(match.group(1), 16), int(match.group(2), 16))
+                _convert_unhandled_method(
+                    int(match.group(1), 16), int(match.group(2), 16)
+                )
                 processed_lines += 1
                 processed_since_last_flush += 1
                 continue
@@ -86,13 +105,14 @@ def _main(args):
 
     output = os.path.realpath(os.path.expanduser(args.out))
     output = os.path.realpath(os.path.expanduser(output))
-    with open(output, 'w') as out_file:
+    with open(output, "w") as out_file:
         with redirect_stdout(out_file):
             _process_file(filename, args.start_line, args.max_lines)
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+
     def _parse_args():
         parser = argparse.ArgumentParser()
 
