@@ -7,7 +7,7 @@ import re
 import sys
 
 # Maximum number of pgraph commands per pb_begin/end block
-MAX_COMMANDS_PER_FLUSH = 64
+MAX_COMMANDS_PER_FLUSH = 32
 
 _HEX_VALUE = r"0x[0-9a-fA-F]+"
 _FLOAT_VALUE = r"[-+0-9.]+"
