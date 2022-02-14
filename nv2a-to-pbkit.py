@@ -10,38 +10,59 @@ import sys
 MAX_COMMANDS_PER_FLUSH = 64
 
 _HEX_VALUE = r"0x[0-9a-fA-F]+"
+_FLOAT_VALUE = r"[-+0-9.]+"
 # fmt: off
+
+# nv2a_pgraph_method 0: 0x97 -> 0x1800 0x11000F
+# nv2a_pgraph_method 0: 0x97 -> 0x1788 NV097_SET_VERTEX_DATA_ARRAY_FORMAT[40] 0x1402
 _PGRAPH_METHOD_RE = re.compile(
-    r"nv2a: pgraph method \((\d+)\):\s+(" + _HEX_VALUE + r") -> (" + _HEX_VALUE + r")\s+(?:(\S+)\s+)?\((" + _HEX_VALUE + r")\)"
+    r"nv2a_pgraph_method (\d+):\s+(" + _HEX_VALUE + r") -> (" + _HEX_VALUE + r")\s+(?:(\S+)\s+)?(" + _HEX_VALUE + r")"
 )
+
+# nv2a_pgraph_method 0: NV20_KELVIN_PRIMITIVE<0x97> -> NV097_SET_TRANSFORM_CONSTANT_LOAD<0x1EA4> (0x62)
+# nv2a_pgraph_method 0: NV20_KELVIN_PRIMITIVE<0x97> -> NV097_SET_TRANSFORM_CONSTANT[1]<0xB84> (0x00000000 => 0.000000)
+_PRETTY_PGRAPH_METHOD_RE = re.compile(
+    r"nv2a_pgraph_method (\d+):\s+\S*<(" + _HEX_VALUE + r")>\s+->\s+(\S+)<(" + _HEX_VALUE + r")>\s+\((" + _HEX_VALUE + r")(?:\s+=>\s+(" + _FLOAT_VALUE + r"))?\)"
+)
+
+# nv2a_pgraph_method_unhandled 0: 0x97 -> 0x03b8 0x0
 _UNHANDLED_METHOD_RE = re.compile(
-    r"nv2a:\s+unhandled\s+\((" + _HEX_VALUE + r")\s+(" + _HEX_VALUE + r")\)"
+    r"nv2a_pgraph_method_unhandled\s+(\d+):\s+(" + _HEX_VALUE + r")\s+->\s+(" + _HEX_VALUE + r")\s+(" + _HEX_VALUE + r")"
 )
 # fmt: on
 
 
-def _convert_pgraph_method(_channel, nv_class, nv_op, nv_op_name, nv_param):
+def _convert_pgraph_method(_channel, nv_class, nv_op, nv_op_name, nv_param, nv_param_float=None):
     if nv_class == 0x97:
-        print("  p = pb_push1(p, 0x%X /*%s*/, 0x%X);" % (nv_op, nv_op_name, nv_param))
+        if nv_param_float is None:
+            print("  p = pb_push1(p, 0x%X /*%s*/, 0x%X);" % (nv_op, nv_op_name, nv_param))
+        else:
+            print("  p = pb_push1f(p, 0x%X /*%s*/, %f);" % (nv_op, nv_op_name, nv_param_float))
         return
 
-    print(
-        "  // p = pb_pushX_to_0x%X(p, 0x%X /*%s*/, 0x%X);"
-        % (nv_class, nv_op, nv_op_name, nv_param)
-    )
+    if nv_param_float is None:
+        print(
+            "  // p = pb_pushX_to_0x%X(p, 0x%X /*%s*/, 0x%X);"
+            % (nv_class, nv_op, nv_op_name, nv_param)
+        )
+    else:
+        print(
+            "  // p = pb_pushXf_to_0x%X(p, 0x%X /*%s*/, %f);"
+            % (nv_class, nv_op, nv_op_name, nv_param_float)
+        )
 
 
-def _convert_unhandled_method(nv_class, nv_op):
+def _convert_unhandled_method(_channel, nv_class, nv_op, nv_param):
     if nv_class == 0x97:
         print(
-            "  // p = pb_pushX(p, 0x%X, /* TODO: extend unhandled method log to include param */);"
-            % nv_op
+            "  // p = pb_push1(p, 0x%X, 0x%X);"
+            % (nv_op, nv_param)
         )
         return
 
     print(
-        "  // p = pb_pushX_to_0x%X(p, 0x%X, /* TODO: extend unhandled method log to include param */);"
-        % (nv_class, nv_op)
+        "  // p = pb_pushX_to_0x%X(p, 0x%X, 0x%X);"
+        % (nv_class, nv_op, nv_param)
     )
 
 
@@ -83,10 +104,28 @@ def _process_file(filename, start_line, max_lines):
                 processed_since_last_flush += 1
                 continue
 
+            match = _PRETTY_PGRAPH_METHOD_RE.match(line)
+            if match:
+                _convert_pgraph_method(
+                    int(match.group(1), 0),
+                    int(match.group(2), 16),
+                    int(match.group(4), 16),
+                    match.group(3),
+                    int(match.group(5), 16),
+                    float(match.group(6)) if match.group(6) else None
+                )
+
+                processed_lines += 1
+                processed_since_last_flush += 1
+                continue
+
             match = _UNHANDLED_METHOD_RE.match(line)
             if match:
                 _convert_unhandled_method(
-                    int(match.group(1), 16), int(match.group(2), 16)
+                    int(match.group(1), 0),
+                    int(match.group(2), 16),
+                    int(match.group(3), 16),
+                    int(match.group(4), 16)
                 )
                 processed_lines += 1
                 processed_since_last_flush += 1
