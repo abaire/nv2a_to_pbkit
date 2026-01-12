@@ -457,6 +457,8 @@ def _emit_commands(commands: list[PGRAPHMethod], *, retain_non_portable: bool, p
     if not pbkitplusplus:
         print("  uint32_t *p;")
         print("  p = pb_begin();")
+    else:
+        print("  Pushbuffer::Begin();")
 
     for command in commands:
         print(command.to_c(retain_non_portable=retain_non_portable, pbkitplusplus=pbkitplusplus))
@@ -471,6 +473,8 @@ def _emit_commands(commands: list[PGRAPHMethod], *, retain_non_portable: bool, p
 
     if not pbkitplusplus:
         print("  pb_end(p);")
+    else:
+        print("  Pushbuffer::End();")
 
 
 def _main(args):
