@@ -22,29 +22,36 @@ _FLOAT_VALUE = r"[-+0-9.]+"
 
 # nv2a_pgraph_method 0: 0x97 -> 0x1800 0x11000F
 # nv2a_pgraph_method 0: 0x97 -> 0x1788 NV097_SET_VERTEX_DATA_ARRAY_FORMAT[40] 0x1402
+# nv2a_pgraph_method 1: 0x39 -> 0x0 (0x14cf0)
 _PGRAPH_METHOD_RE = re.compile(
-    r"nv2a_pgraph_method (\d+):\s+(" + _HEX_VALUE + r") -> (" + _HEX_VALUE + r")\s+(?:(\S+)\s+)?(" + _HEX_VALUE + r")"
+    r"nv2a_pgraph_method (\d+):\s+(" + _HEX_VALUE + r") -> (" + _HEX_VALUE + r")\s+(?:(\S+)\s+)?\(?(" + _HEX_VALUE + r")\)?"
 )
 
 # nv2a_pgraph_method 0: NV20_KELVIN_PRIMITIVE<0x97> -> NV097_SET_TRANSFORM_CONSTANT_LOAD<0x1EA4> (0x62)
 # nv2a_pgraph_method 0: NV20_KELVIN_PRIMITIVE<0x97> -> NV097_SET_TRANSFORM_CONSTANT[1]<0xB84> (0x00000000 => 0.000000)
+# nv2a_pgraph_method 0: 0x97 -> NV097_SET_TEXGEN_PLANE_S@3[1]<0x904> (0x00000000 => 0)
 # nv2a_pgraph_method 0: NV20_KELVIN_PRIMITIVE<0x97> -> NV097_SET_BEGIN_END<0x17fc> (NV097_SET_BEGIN_END_OP_END<0x0>)
+# nv2a_pgraph_method 0: 0x97 -> NV097_SET_OBJECT<0x0> (0x000149C0 => 84416)
+# nv2a_pgraph_method 2: 0x9f -> NV09F_SET_OPERATION<0x2fc> (SRCCOPY)
 _PRETTY_PGRAPH_METHOD_RE = re.compile(
-    r"nv2a_pgraph_method (\d+):\s+\S*<(" + _HEX_VALUE + r")>\s+->\s+(\S+)<(" + _HEX_VALUE + r")>\s+\((.*)\)"
+    r"nv2a_pgraph_method (\d+):\s+(?:\S*<)?(" + _HEX_VALUE + r")>?\s+->\s+(\S+)<(" + _HEX_VALUE + r")>\s+\((.+)\)"
 )
 
 # 0x00000000 => 0.000000
 _PRETTY_ARGUMENT_FLOAT_RE = re.compile(
     r"(" + _HEX_VALUE + r")\s+=>\s+(" + _FLOAT_VALUE + r")"
 )
-# 0x0 {BLUE:00 0.000000, GREEN:00 0.000000, RED:00 0.000000, ALPHA:00 0.000000}
+# {BLUE:00 0.000000, GREEN:00 0.000000, RED:00 0.000000, ALPHA:00 0.000000} <0x0>
 PRETTY_ARGUMENT_BITVECTOR_RE = re.compile(
-    r"(" + _HEX_VALUE + r")\s+(\{.+})"
+    r"(\{.+})\s+<(" + _HEX_VALUE + r")>"
 )
 # NV097_SET_BEGIN_END_OP_TRIANGLE_FAN<0x7>
 _PRETTY_ARGUMENT_NAMED_VALUE_RE = re.compile(r"(\w+)<(" + _HEX_VALUE + r")>")
 # 0x3f800000
 _PRETTY_ARGUMENT_HEX_VALUE_RE = re.compile(r"(" + _HEX_VALUE + r")")
+
+# 84416 <0x149c0>
+_PRETTY_ARGUMENT_RAW_VALUE_RE = re.compile(r"\S+\s+<(" + _HEX_VALUE + r")>")
 
 # nv2a_pgraph_method_unhandled 0: 0x97 -> 0x03b8 0x0
 _UNHANDLED_METHOD_RE = re.compile(
@@ -91,9 +98,130 @@ NON_PORTABLE_STATEFUL_COMMANDS = {
     0x00001754,  # NV097_SET_VERTEX_DATA_ARRAY_OFFSET
     0x00001758,  # NV097_SET_VERTEX_DATA_ARRAY_OFFSET
     0x0000175C,  # NV097_SET_VERTEX_DATA_ARRAY_OFFSET
-
-    0x000017C8, # NV097_CLEAR_REPORT_VALUE - If no report value was set this will trigger an exception.
+    0x000017C8,  # NV097_CLEAR_REPORT_VALUE - If no report value was set this will trigger an exception.
 }
+
+
+def push1_pbkit(
+    prefix: str | None,
+    nv_op: int,
+    nv_op_name: str | None,
+    nv_param: int,
+    descr: str | None = None,
+) -> str:
+    if prefix is None:
+        prefix = ""
+    op_name = "" if nv_op_name is None else f"/* {nv_op_name} */"
+    if descr is None:
+        descr = ""
+
+    return f"{prefix}p = pb_push1(p, 0x{nv_op:X} {op_name}, 0x{nv_param:X});{descr}"
+
+
+def push1f_pbkit(prefix: str | None, nv_op: int, nv_op_name: str, nv_param: float) -> str:
+    if prefix is None:
+        prefix = ""
+    return f"{prefix}p = pb_push1(p, 0x{nv_op:X} /*{nv_op_name}*/, {nv_param});"
+
+
+def push_pbkitplusplus(
+    prefix: str | None,
+    nv_op: int,
+    nv_op_name: str | None,
+    nv_param: int,
+    descr: str | None = None,
+) -> str:
+    if prefix is None:
+        prefix = ""
+    op_name = "" if nv_op_name is None else f"/* {nv_op_name} */"
+    if descr is None:
+        descr = ""
+
+    return f"{prefix}Pushbuffer::Push(0x{nv_op:X} {op_name}, 0x{nv_param:X});{descr}"
+
+
+def pushf_pbkitplusplus(
+    prefix: str | None,
+    nv_op: int,
+    nv_op_name: str | None,
+    nv_param: float,
+    descr: str | None = None,
+) -> str:
+    if prefix is None:
+        prefix = ""
+    op_name = "" if nv_op_name is None else f"/* {nv_op_name} */"
+    if descr is None:
+        descr = ""
+
+    return f"{prefix}Pushbuffer::Push(0x{nv_op:X} {op_name}, {nv_param});{descr}"
+
+
+def push1_to_pbkit(
+    prefix: str | None,
+    nv_channel: int,
+    nv_class: int,
+    nv_op: int,
+    nv_op_name: str | None,
+    nv_param: int,
+) -> str:
+    if prefix is None:
+        prefix = ""
+    op_name = "" if nv_op_name is None else f"/* {nv_op_name} */"
+
+    return f"{prefix}p = pb_push1_to({nv_channel} /* 0x{nv_class:X} */, p, 0x{nv_op:X} {op_name}, 0x{nv_param:X});"
+
+
+def push1f_to_pbkit(
+    prefix: str | None,
+    nv_channel: int,
+    nv_class: int,
+    nv_op: int,
+    nv_op_name: str | None,
+    nv_param: int,
+) -> str:
+    if prefix is None:
+        prefix = ""
+    op_name = "" if nv_op_name is None else f"/* {nv_op_name} */"
+
+    return f"{prefix}p = pb_push1f_to({nv_channel} /* 0x{nv_class:X} */, p, 0x{nv_op:X} {op_name}, {nv_param});"
+
+
+def push_to_pbkitplusplus(
+    prefix: str | None,
+    nv_channel: int,
+    nv_class: int,
+    nv_op: int,
+    nv_op_name: str | None,
+    nv_param: int,
+    descr: str | None = None,
+) -> str:
+    if prefix is None:
+        prefix = ""
+    op_name = "" if nv_op_name is None else f"/* {nv_op_name} */"
+    if descr is None:
+        descr = ""
+
+    return (
+        f"{prefix}Pushbuffer::PushTo({nv_channel} /* 0x{nv_class:X} */, 0x{nv_op:X} {op_name}, 0x{nv_param:X});{descr}"
+    )
+
+
+def pushf_to_pbkitplusplus(
+    prefix: str | None,
+    nv_channel: int,
+    nv_class: int,
+    nv_op: int,
+    nv_op_name: str | None,
+    nv_param: float,
+    descr: str | None = None,
+) -> str:
+    if prefix is None:
+        prefix = ""
+    op_name = "" if nv_op_name is None else f"/* {nv_op_name} */"
+    if descr is None:
+        descr = ""
+
+    return f"{prefix}Pushbuffer::PushTo({nv_channel} /* 0x{nv_class:X} */, 0x{nv_op:X} {op_name}, {nv_param});{descr}"
 
 
 @dataclass
@@ -135,16 +263,18 @@ class PGRAPHMethod:
     def is_non_portable(self) -> bool:
         return self.nv_class == 0x97 and self.nv_op in NON_PORTABLE_STATEFUL_COMMANDS
 
-    def to_c(self, *, retain_non_portable: bool = False) -> str:
+    def to_c(self, *, retain_non_portable: bool = False, pbkitplusplus: bool = False) -> str:
         prefix = "  "
         if self.is_non_portable and not retain_non_portable:
             prefix += "// NONPORTABLE: "
 
         if self.nv_class == 0x97:
+            push = push1_pbkit if not pbkitplusplus else push_pbkitplusplus
+            pushf = push1f_pbkit if not pbkitplusplus else pushf_pbkitplusplus
             if self.nv_op_name:
                 if self.nv_param_float is None:
                     descr = f"  // {self.nv_param_description}" if self.nv_param_description else ""
-                    return "%sp = pb_push1(p, 0x%X /*%s*/, 0x%X);%s" % (
+                    return push(
                         prefix,
                         self.nv_op,
                         self.nv_op_name,
@@ -152,39 +282,47 @@ class PGRAPHMethod:
                         descr,
                     )
 
-                return "%sp = pb_push1f(p, 0x%X /*%s*/, %f);" % (
+                return pushf(
                     prefix,
                     self.nv_op,
                     self.nv_op_name,
                     self.nv_param_float,
                 )
 
-            return "  // p = pb_push1(p, 0x%X, 0x%X);  // xemu unhandled method" % (self.nv_op, self.nv_param)
+            return push("//", self.nv_op, None, self.nv_param)
 
+        push_to = push1_to_pbkit if not pbkitplusplus else push_to_pbkitplusplus
         if self.nv_op_name:
+            pushf_to = push1f_to_pbkit if not pbkitplusplus else pushf_to_pbkitplusplus
+
             if self.nv_param_float is None:
-                return "  // p = pb_pushX_to_0x%X(p, 0x%X /*%s*/, 0x%X);" % (
+                return push_to(
+                    prefix,
+                    self.nv_channel,
                     self.nv_class,
                     self.nv_op,
                     self.nv_op_name,
                     self.nv_param,
                 )
-            return "  // p = pb_pushXf_to_0x%X(p, 0x%X /*%s*/, %f);" % (
+            return pushf_to(
+                prefix,
+                self.nv_channel,
                 self.nv_class,
                 self.nv_op,
                 self.nv_op_name,
                 self.nv_param_float,
             )
 
-        return "  // p = pb_pushX_to_0x%X(p, 0x%X, 0x%X);" % (self.nv_class, self.nv_op, self.nv_param)
+        return push_to(prefix, self.nv_channel, self.nv_class, self.nv_op, None, self.nv_param)
 
 
 class PGRAPHComment(PGRAPHMethod):
     def __init__(self, message: str):
         self.message = message
 
-    def to_c(self, *, retain_non_portable: bool = False) -> str:
+    def to_c(self, *, retain_non_portable: bool = False, pbkitplusplus: bool = False) -> str:
         del retain_non_portable
+        del pbkitplusplus
         return f"  // {self.message}"
 
 
@@ -195,13 +333,17 @@ def _process_pretty_param(param: str) -> tuple[int, str, float | None]:
 
     match = PRETTY_ARGUMENT_BITVECTOR_RE.match(param)
     if match:
-        return int(match.group(1), 16), match.group(2), None
+        return int(match.group(2), 16), match.group(1), None
 
     match = _PRETTY_ARGUMENT_NAMED_VALUE_RE.match(param)
     if match:
         return int(match.group(2), 16), match.group(1), None
 
     match = _PRETTY_ARGUMENT_HEX_VALUE_RE.match(param)
+    if match:
+        return int(match.group(1), 16), "", None
+
+    match = _PRETTY_ARGUMENT_RAW_VALUE_RE.match(param)
     if match:
         return int(match.group(1), 16), "", None
 
@@ -309,22 +451,26 @@ def _filter_draws(commands: list[PGRAPHMethod], start_draw: int, max_draws: int)
     return state_commands + retained_commands
 
 
-def _emit_commands(commands: list[PGRAPHMethod], *, retain_non_portable: bool):
+def _emit_commands(commands: list[PGRAPHMethod], *, retain_non_portable: bool, pbkitplusplus: bool = False):
     processed_since_last_flush = 0
 
-    print("  uint32_t *p;")
-    print("  p = pb_begin();")
+    if not pbkitplusplus:
+        print("  uint32_t *p;")
+        print("  p = pb_begin();")
 
     for command in commands:
-        print(command.to_c(retain_non_portable=retain_non_portable))
+        print(command.to_c(retain_non_portable=retain_non_portable, pbkitplusplus=pbkitplusplus))
 
-        processed_since_last_flush += 1
-        if processed_since_last_flush > MAX_COMMANDS_PER_FLUSH:
-            print("  pb_end(p);")
-            print("  while (pb_busy()) {}")
-            print("  p = pb_begin();")
-            processed_since_last_flush = 0
-    print("  pb_end(p);")
+        if not pbkitplusplus:
+            processed_since_last_flush += 1
+            if processed_since_last_flush > MAX_COMMANDS_PER_FLUSH:
+                print("  pb_end(p);")
+                print("  while (pb_busy()) {}")
+                print("  p = pb_begin();")
+                processed_since_last_flush = 0
+
+    if not pbkitplusplus:
+        print("  pb_end(p);")
 
 
 def _main(args):
@@ -359,7 +505,7 @@ def _main(args):
         if args.max_commands:
             commands = commands[: args.max_commands]
 
-        _emit_commands(commands, retain_non_portable=args.retain_non_portable)
+        _emit_commands(commands, retain_non_portable=args.retain_non_portable, pbkitplusplus=args.pbkitplusplus)
 
         return 0
 
@@ -436,6 +582,13 @@ if __name__ == "__main__":
 
         parser.add_argument(
             "--list", "-l", action="store_true", help="Print info on draw calls and their ending line numbers"
+        )
+
+        parser.add_argument(
+            "--pbkitplusplus",
+            "-P",
+            action="store_true",
+            help="Emit PBKitPlusPlus commands rather than raw pbkit",
         )
 
         return parser.parse_args()
