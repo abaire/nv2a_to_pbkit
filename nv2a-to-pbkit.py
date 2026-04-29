@@ -61,16 +61,17 @@ _UNHANDLED_METHOD_RE = re.compile(
 
 
 BEGIN_END = 0x17FC
+FLIP_STALL = 0x0130
 
 STATELESS_COMMANDS = {
     0x00000100,  # NV097_NO_OPERATION
     0x00000110,  # NV097_WAIT_FOR_IDLE
     0x00000120,  # NV097_SET_FLIP_READ
     0x0000012C,  # NV097_FLIP_INCREMENT_WRITE
-    0x00000130,  # NV097_FLIP_STALL
+    FLIP_STALL,  # NV097_FLIP_STALL
     0x00001710,  # NV097_BREAK_VERTEX_BUFFER_CACHE
     0x000017D0,  # NV097_GET_REPORT
-    0x000017FC,  # NV097_SET_BEGIN_END
+    BEGIN_END,  # NV097_SET_BEGIN_END
     0x00001D70,  # NV097_BACK_END_WRITE_SEMAPHORE_RELEASE
 }
 
@@ -103,11 +104,11 @@ NON_PORTABLE_STATEFUL_COMMANDS = {
 
 
 def push1_pbkit(
-    prefix: str | None,
-    nv_op: int,
-    nv_op_name: str | None,
-    nv_param: int,
-    descr: str | None = None,
+        prefix: str | None,
+        nv_op: int,
+        nv_op_name: str | None,
+        nv_param: int,
+        descr: str | None = None,
 ) -> str:
     if prefix is None:
         prefix = ""
@@ -125,11 +126,11 @@ def push1f_pbkit(prefix: str | None, nv_op: int, nv_op_name: str, nv_param: floa
 
 
 def push_pbkitplusplus(
-    prefix: str | None,
-    nv_op: int,
-    nv_op_name: str | None,
-    nv_param: int,
-    descr: str | None = None,
+        prefix: str | None,
+        nv_op: int,
+        nv_op_name: str | None,
+        nv_param: int,
+        descr: str | None = None,
 ) -> str:
     if prefix is None:
         prefix = ""
@@ -141,11 +142,11 @@ def push_pbkitplusplus(
 
 
 def pushf_pbkitplusplus(
-    prefix: str | None,
-    nv_op: int,
-    nv_op_name: str | None,
-    nv_param: float,
-    descr: str | None = None,
+        prefix: str | None,
+        nv_op: int,
+        nv_op_name: str | None,
+        nv_param: float,
+        descr: str | None = None,
 ) -> str:
     if prefix is None:
         prefix = ""
@@ -157,12 +158,12 @@ def pushf_pbkitplusplus(
 
 
 def push1_to_pbkit(
-    prefix: str | None,
-    nv_channel: int,
-    nv_class: int,
-    nv_op: int,
-    nv_op_name: str | None,
-    nv_param: int,
+        prefix: str | None,
+        nv_channel: int,
+        nv_class: int,
+        nv_op: int,
+        nv_op_name: str | None,
+        nv_param: int,
 ) -> str:
     if prefix is None:
         prefix = ""
@@ -172,12 +173,12 @@ def push1_to_pbkit(
 
 
 def push1f_to_pbkit(
-    prefix: str | None,
-    nv_channel: int,
-    nv_class: int,
-    nv_op: int,
-    nv_op_name: str | None,
-    nv_param: int,
+        prefix: str | None,
+        nv_channel: int,
+        nv_class: int,
+        nv_op: int,
+        nv_op_name: str | None,
+        nv_param: int,
 ) -> str:
     if prefix is None:
         prefix = ""
@@ -187,13 +188,13 @@ def push1f_to_pbkit(
 
 
 def push_to_pbkitplusplus(
-    prefix: str | None,
-    nv_channel: int,
-    nv_class: int,
-    nv_op: int,
-    nv_op_name: str | None,
-    nv_param: int,
-    descr: str | None = None,
+        prefix: str | None,
+        nv_channel: int,
+        nv_class: int,
+        nv_op: int,
+        nv_op_name: str | None,
+        nv_param: int,
+        descr: str | None = None,
 ) -> str:
     if prefix is None:
         prefix = ""
@@ -207,13 +208,13 @@ def push_to_pbkitplusplus(
 
 
 def pushf_to_pbkitplusplus(
-    prefix: str | None,
-    nv_channel: int,
-    nv_class: int,
-    nv_op: int,
-    nv_op_name: str | None,
-    nv_param: float,
-    descr: str | None = None,
+        prefix: str | None,
+        nv_channel: int,
+        nv_class: int,
+        nv_op: int,
+        nv_op_name: str | None,
+        nv_param: float,
+        descr: str | None = None,
 ) -> str:
     if prefix is None:
         prefix = ""
@@ -227,6 +228,7 @@ def pushf_to_pbkitplusplus(
 @dataclass
 class PGRAPHMethod:
     line_number: int
+    frame_number: int
     draw_number: int
 
     nv_channel: int
@@ -247,6 +249,10 @@ class PGRAPHMethod:
     @property
     def is_beginend_end(self) -> bool:
         return self.nv_class == 0x97 and self.nv_op == BEGIN_END and self.nv_param == 0
+
+    @property
+    def is_flip_stall(self) -> bool:
+        return self.nv_class == 0x97 and self.nv_op == FLIP_STALL
 
     @property
     def is_stateful(self) -> bool:
@@ -352,6 +358,7 @@ def _process_pretty_param(param: str) -> tuple[int, str, float | None]:
 
 
 def _process_file(filename: str) -> list[PGRAPHMethod]:
+    frame_number = 0
     draw_number = 1
     in_begin_end = False
     pgraph_methods = []
@@ -366,6 +373,7 @@ def _process_file(filename: str) -> list[PGRAPHMethod]:
             if match:
                 method = PGRAPHMethod(
                     line_number=line_number + 1,
+                    frame_number=frame_number,
                     draw_number=draw_number,
                     nv_channel=int(match.group(1), 0),
                     nv_class=int(match.group(2), 16),
@@ -381,6 +389,7 @@ def _process_file(filename: str) -> list[PGRAPHMethod]:
                     param, param_description, float_val = _process_pretty_param(match.group(5))
                     method = PGRAPHMethod(
                         line_number=line_number + 1,
+                        frame_number=frame_number,
                         draw_number=draw_number,
                         nv_channel=int(match.group(1), 0),
                         nv_class=int(match.group(2), 16),
@@ -397,6 +406,7 @@ def _process_file(filename: str) -> list[PGRAPHMethod]:
                 if match:
                     method = PGRAPHMethod(
                         line_number=line_number + 1,
+                        frame_number=frame_number,
                         draw_number=draw_number,
                         nv_channel=int(match.group(1), 0),
                         nv_class=int(match.group(2), 16),
@@ -413,6 +423,9 @@ def _process_file(filename: str) -> list[PGRAPHMethod]:
                     in_begin_end = False
                     draw_number += 1
 
+                if method.is_flip_stall:
+                    frame_number += 1
+
                 pgraph_methods.append(method)
 
     return pgraph_methods
@@ -424,6 +437,22 @@ def _first_command_at_or_after(line_num: int, commands: list[PGRAPHMethod]) -> i
             return index
     return None
 
+
+def _split_commands_by_frame(commands: list[PGRAPHMethod]) -> list[list[PGRAPHMethod]]:
+    ret: list[list[PGRAPHMethod]] = []
+
+    for command in commands:
+        if not command.frame_number:
+            continue
+
+        frame_number = command.frame_number - 1
+        if frame_number == len(ret):
+            ret.append([command])
+            continue
+
+        ret[frame_number].append(command)
+
+    return ret
 
 def _filter_draws(commands: list[PGRAPHMethod], start_draw: int, max_draws: int) -> list[PGRAPHMethod]:
     end_draw = start_draw + max_draws
@@ -438,7 +467,7 @@ def _filter_draws(commands: list[PGRAPHMethod], start_draw: int, max_draws: int)
                 stateful_commands[command.nv_op] = command
             continue
 
-        if command.draw_number >= end_draw:
+        if max_draws and command.draw_number >= end_draw:
             break
 
         retained_commands.append(command)
@@ -484,18 +513,29 @@ def _main(args):
         args.start_draw = args.draw
         args.max_draws = 1
 
+    emit = lambda x: _emit_commands(x, retain_non_portable=args.retain_non_portable, pbkitplusplus=args.pbkitplusplus)
+
     def run():
         commands = _process_file(filename)
 
         if args.list:
             for command_index, command in enumerate(commands):
                 if command.is_beginend_end:
-                    print(f"Command {command_index} on line {command.line_number} ends draw {command.draw_number}")
+                    print(f"Command {command_index} on line {command.line_number} ends frame {command.frame_number} draw {command.draw_number}")
+            return 0
+
+        if args.separate_frames:
+            split_commands = _split_commands_by_frame(commands)
+            for command_list in split_commands:
+                print(f"void SubmitFrame{command_list[0].frame_number}() {{")
+                emit(command_list)
+                print("}")
+                print("")
             return 0
 
         if args.start_draw:
             commands = _filter_draws(commands, args.start_draw, args.max_draws)
-            _emit_commands(commands, retain_non_portable=args.retain_non_portable)
+            emit(commands)
             return 0
 
         if args.start_line:
@@ -509,7 +549,7 @@ def _main(args):
         if args.max_commands:
             commands = commands[: args.max_commands]
 
-        _emit_commands(commands, retain_non_portable=args.retain_non_portable, pbkitplusplus=args.pbkitplusplus)
+        emit(commands)
 
         return 0
 
@@ -522,7 +562,6 @@ def _main(args):
 
 
 if __name__ == "__main__":
-
     def _parse_args():
         parser = argparse.ArgumentParser()
 
@@ -595,6 +634,14 @@ if __name__ == "__main__":
             help="Emit PBKitPlusPlus commands rather than raw pbkit",
         )
 
+        parser.add_argument(
+            "--separate_frames",
+            "-F",
+            action="store_true",
+            help="Generate separate functions for each FLIP_STALL denoted frame. Discards everything prior to the first flip."
+        )
+
         return parser.parse_args()
+
 
     sys.exit(_main(_parse_args()))
